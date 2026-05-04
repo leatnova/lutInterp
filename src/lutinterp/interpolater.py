@@ -81,6 +81,22 @@ def _extract_coef(
         return np.array(ys)
 
 
+def _coef_dtype(res_exp: int) -> str:
+    """Return the C type name for the given resolution exponent."""
+    if res_exp <= 8:
+        return "int8_t"
+    elif res_exp <= 16:
+        return "int16_t"
+    else:
+        return "int32_t"
+
+
+def _cast_coef(coef: NDArray[np.float64], dtype: str) -> NDArray:
+    """Cast coef to the numpy integer type matching dtype."""
+    _np_map = {"int8_t": np.int8, "int16_t": np.int16, "int32_t": np.int32}
+    return coef.astype(_np_map[dtype])
+
+
 def _check_overflow(
     coef: NDArray[np.float64],
     coef_shifts: list[int],
@@ -219,7 +235,6 @@ class CInterpolator(object):
             self._coefShift = [0, 0]
         if self._type == "cubic":
             _check_overflow(self._coef, self._coefShift, self._xSupPointsExp)
-        self._coefDataType = None
 
     def __repr__(self):
         s = []
@@ -275,16 +290,8 @@ class CInterpolator(object):
 
     def _c_array(self):
         """Generate the C array string from numpy array."""
-        if self._coefResExp <= 8:
-            dataType = "int8_t"
-            coef = self._coef.astype(np.int8)
-        elif self._coefResExp <= 16:
-            dataType = "int16_t"
-            coef = self._coef.astype(np.int16)
-        elif self._coefResExp <= 32:
-            dataType = "int32_t"
-            coef = self._coef.astype(np.int32)
-        self._coefDataType = dataType
+        dataType = _coef_dtype(self._coefResExp)
+        coef = _cast_coef(self._coef, dataType)
         s = "const {} {}Coef" + "[{}]" * len(coef.shape) + " =\n"
         s = s.format(dataType, self._funcName, *coef.shape)
         tmp = np.array2string(coef, separator=", ").replace("[", "{")
@@ -306,7 +313,6 @@ class CInterpolator(object):
     def _c_func_std(self, indent=4):
         """funfact: because coef is signed, x sould be signed too
         otherwise 64x64 multiplications are used which is much slower!"""
-        assert self._coefDataType is not None
         indent = " " * indent
         inputType = "uint32_t" if self._xSign == "pos" else "int32_t"
         outputType = "uint32_t" if min(self._ysim) >= 0 else "int32_t"
@@ -330,7 +336,7 @@ class CInterpolator(object):
             p = "uint32_t p = {};".format(tmp)
         s.append(indent + p)
         s.append(indent + f"if (p > {int(len(self._x) - 2):d}) while (1);")
-        cDType = f"const {self._coefDataType} *"
+        cDType = f"const {_coef_dtype(self._coefResExp)} *"
         if self._type == "cubic":
             s.append(indent + cDType + f"c = {self._funcName}Coef[p];")
         else:
