@@ -4,24 +4,35 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-`lutInterp` is a Python tool that generates C lookup-table interpolation code. Given a Python callable, it produces a C coefficient array and a C function that approximates the callable using integer-only arithmetic (no floating point) — suitable for embedded targets.
+`lutInterp` is a Python package that generates C lookup-table interpolation code. Given a Python callable, it produces a C coefficient array and a C function that approximates the callable using integer-only arithmetic (no floating point) — suitable for embedded targets.
 
 ## Commands
 
 ```bash
-# Projekt initialisieren (einmalig)
-uv init
-uv add numpy scipy matplotlib
+# Install dependencies (including dev extras)
+uv sync --group dev
 
-# Skript ausführen
-uv run main.py
+# Run tests
+uv run pytest
+
+# Run a script that uses the package
+uv run python my_script.py
 ```
 
-There are no tests, no build system, and no linter configuration.
+## Project structure
+
+```
+src/lutinterp/
+    __init__.py        # exports CInterpolator
+    interpolater.py    # contains CInterpolator class
+tests/
+    test_interpolater.py
+pyproject.toml
+```
+
+The package is `lutinterp`; the public API is a single class `CInterpolator` (note correct spelling — the file is named `interpolater.py` but the class is `CInterpolator`).
 
 ## Architecture
-
-The entire project is `main.py`, which contains a single class `CInterpolater`.
 
 **Core data flow:**
 
@@ -40,4 +51,16 @@ All x-axis parameters are expressed as binary exponents (`xRangeExp`, `xSupportP
 
 **`xRangeSign`:**
 
-Controls the sign/centering of the input domain: `'pos'` → `[0, 2^xRangeExp]`, `'neg'` → `[2^xRangeExp, 0]` (reversed), `'center'` → `[-2^xRangeExp, +2^xRangeExp]`. This affects both the index offset in `_c_func_std` and the choice of `uint32_t` vs. `int32_t` for the C function argument.
+Controls the sign/centering of the input domain: `'pos'` → `[0, 2^xRangeExp]`, `'neg'` → `[2^xRangeExp, 0]` (reversed), `'center'` → `[-2^xRangeExp, +2^xRangeExp]`. This affects both the index offset in `_c_func_std` and the choice of `uint32_t` vs. `int32_t` for the C function argument. Invalid values raise `ValueError`.
+
+**`scaleCoef` parameter:**
+
+When `False`, skips `_scale_coef()` and sets all shifts to 0. Useful for direct-lookup tables or testing.
+
+**`fargs` parameter:**
+
+Extra positional arguments forwarded to `func` when sampling x values. Allows parameterized callables without wrapping them in a lambda.
+
+**Plotting helpers:**
+
+`plot_error()` and `plot_func()` display matplotlib figures comparing linear, cubic, pchip, and exact results. These require `plt.show()` to block and are for interactive use only.
