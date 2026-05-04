@@ -12,6 +12,75 @@ from numpy.typing import NDArray
 from scipy.interpolate import PchipInterpolator
 
 
+def _build_xs(
+    xSign: str,
+    xRangeExp: int,
+    xSupPointsExp: int,
+    xStart: int,
+    xEnd: int | None,
+) -> NDArray[np.float64]:
+    """Return the cropped x support-point array."""
+    n = (2**xSupPointsExp) + 1
+    r = 2**xRangeExp
+    if xSign == "pos":
+        x = np.linspace(0, r, n)
+    elif xSign == "neg":
+        x = np.linspace(r, 0, n)
+    else:  # "center"
+        x = np.linspace(-r, r, n)
+    return x[xStart:xEnd]
+
+
+def _sample_with_sim(
+    func: Callable[..., NDArray[np.float64]],
+    fargs: tuple,
+    fkwargs: dict,
+    xs: NDArray[np.float64],
+) -> tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]:
+    """Return (ys, xsim, ysim)."""
+    ys = func(xs, *fargs, **fkwargs)
+    xsim = np.linspace(xs[0], xs[-1], 10000)[1:-1]
+    ysim = func(xsim, *fargs, **fkwargs)
+    return ys, xsim, ysim
+
+
+def _fit_splines(
+    xs: NDArray[np.float64],
+    ys: NDArray[np.float64],
+    xsim: NDArray[np.float64],
+    ysim: NDArray[np.float64],
+) -> tuple[interp.CubicSpline, PchipInterpolator]:
+    """Return (pp, pchip) fitted to xs/ys with boundary slopes from xsim/ysim."""
+    slopeStart = (ysim[1] - ysim[0]) / (xsim[1] - xsim[0])
+    slopeEnd = (ysim[-1] - ysim[-2]) / (xsim[-1] - xsim[-2])
+    bc = ((1, slopeStart), (1, slopeEnd))
+    # CubicSpline and PchipInterpolator require strictly increasing x.
+    # For 'neg' mode xs is decreasing, so sort before passing to scipy.
+    if xs[0] > xs[-1]:
+        xsAsc, ysAsc = xs[::-1], ys[::-1]
+        bcAsc = ((1, slopeEnd), (1, slopeStart))
+    else:
+        xsAsc, ysAsc = xs, ys
+        bcAsc = bc
+    pp = interp.CubicSpline(xsAsc, ysAsc, bc_type=bcAsc)  # type: ignore[arg-type]
+    pchip = PchipInterpolator(xsAsc, ysAsc)
+    return pp, pchip
+
+
+def _extract_coef(
+    typ: str,
+    pp: interp.CubicSpline,
+    ys: NDArray[np.float64],
+    xs: NDArray[np.float64],
+) -> NDArray[np.float64]:
+    """Return the coefficient array for the given interpolation type."""
+    if typ == "cubic":
+        coef = copy.copy(pp.c.T)
+        return coef[::-1] if xs[0] > xs[-1] else coef
+    else:  # "linear"
+        return np.array(ys)
+
+
 class CInterpolator(object):
     """Class to produce interpolation tables and the according C-function
 
@@ -89,13 +158,14 @@ class CInterpolator(object):
         self._xEnd = xEndIdx
 
         self._coefShift: list[int] = []
-        self._x: NDArray[np.float64] | None = None
-        self._y: NDArray[np.float64] | None = None
-        self._xsim: NDArray[np.float64] | None = None
-        self._ysim: NDArray[np.float64] | None = None
-        self._pp: interp.CubicSpline | None = None
-        self._coef: NDArray[np.float64] | None = None
-        self._create_interp_points()
+        self._x = _build_xs(
+            self._xSign, self._xRangeExp, self._xSupPointsExp, self._xStart, self._xEnd
+        )
+        self._y, self._xsim, self._ysim = _sample_with_sim(
+            self._func, self._fargs, self._fkwargs, self._x
+        )
+        self._pp, self._pchip = _fit_splines(self._x, self._y, self._xsim, self._ysim)
+        self._coef = _extract_coef(self._type, self._pp, self._y, self._x)
         if scaleCoef:
             self._scale_coef()
         else:
@@ -124,41 +194,31 @@ class CInterpolator(object):
         """Generate an error plot comparing results from interpolation with
         selected method against user supplied function.
         """
-        if self._x is not None:
-            assert self._y is not None
-            assert self._xsim is not None
-            assert self._ysim is not None
-            assert self._pp is not None
-            plt.figure(65)
-            ylin = np.interp(self._xsim, self._x, self._y)
-            y = 100 * (self._ysim - ylin) / self._ysim
-            plt.plot(self._xsim, y, label="linear")
-            y = 100 * (self._ysim - self._pp(self._xsim)) / self._ysim
-            plt.plot(self._xsim, y, label="cubic")
-            y = 100 * (self._ysim - self._pchip(self._xsim)) / self._ysim
-            plt.plot(self._xsim, y, label="pchip")
-            plt.title(f"error [%] ({self._funcName})")
-            plt.grid(True)
-            plt.legend()
-            plt.show()
+        plt.figure(65)
+        ylin = np.interp(self._xsim, self._x, self._y)
+        y = 100 * (self._ysim - ylin) / self._ysim
+        plt.plot(self._xsim, y, label="linear")
+        y = 100 * (self._ysim - self._pp(self._xsim)) / self._ysim
+        plt.plot(self._xsim, y, label="cubic")
+        y = 100 * (self._ysim - self._pchip(self._xsim)) / self._ysim
+        plt.plot(self._xsim, y, label="pchip")
+        plt.title(f"error [%] ({self._funcName})")
+        plt.grid(True)
+        plt.legend()
+        plt.show()
 
     def plot_func(self):
         """Plot function values from linear, cubic and exact solution."""
-        if self._x is not None:
-            assert self._y is not None
-            assert self._xsim is not None
-            assert self._ysim is not None
-            assert self._pp is not None
-            plt.figure(66)
-            ylin = np.interp(self._xsim, self._x, self._y)
-            plt.plot(self._xsim, ylin, label="linear")
-            plt.plot(self._xsim, self._pp(self._xsim), label="cubic")
-            plt.plot(self._xsim, self._pchip(self._xsim), label="pchip")
-            plt.plot(self._xsim, self._ysim, label="exact")
-            plt.title(f"function ({self._funcName})")
-            plt.grid(True)
-            plt.legend()
-            plt.show()
+        plt.figure(66)
+        ylin = np.interp(self._xsim, self._x, self._y)
+        plt.plot(self._xsim, ylin, label="linear")
+        plt.plot(self._xsim, self._pp(self._xsim), label="cubic")
+        plt.plot(self._xsim, self._pchip(self._xsim), label="pchip")
+        plt.plot(self._xsim, self._ysim, label="exact")
+        plt.title(f"function ({self._funcName})")
+        plt.grid(True)
+        plt.legend()
+        plt.show()
 
     def print_to_file(self, filename: str | Path = "output.txt"):
         """Print the C function and coefficient array to a file."""
@@ -168,7 +228,6 @@ class CInterpolator(object):
 
     def _c_array(self):
         """Generate the C array string from numpy array."""
-        assert self._coef is not None
         if self._coefResExp <= 8:
             dataType = "int8_t"
             coef = self._coef.astype(np.int8)
@@ -188,8 +247,6 @@ class CInterpolator(object):
 
     def _c_header(self):
         """Generate a header string."""
-        assert self._x is not None
-        assert self._y is not None
         s = []
         s.append("/**")
         s.append(f" * {self._funcName}")
@@ -202,8 +259,6 @@ class CInterpolator(object):
     def _c_func_std(self, indent=4):
         """funfact: because coef is signed, x sould be signed too
         otherwise 64x64 multiplications are used which is much slower!"""
-        assert self._x is not None
-        assert self._ysim is not None
         assert self._coefDataType is not None
         indent = " " * indent
         inputType = "uint32_t" if self._xSign == "pos" else "int32_t"
@@ -332,61 +387,6 @@ class CInterpolator(object):
             s = f"({s}) >> {shift}"
         return s
 
-    def _create_interp_points(self):
-        """Create the interpolation points and the coefficients.
-
-        The x values (supporting points) are defined through `_xRangeExp`
-        and `_xSupPointsExp`. Those points are equaly spaced with the space
-        being a multiple of 2, which allows to build a very fast coefficient
-        access through simple shifts.
-
-        The y values are retrieved by applying the x values to the `_func`.
-
-        The coefficients (`_coef`) are either:
-            - the y values in case of a linear function
-            - retrieved from `interp.CubicSpline` in case of a cubic function
-
-        Further there is `_xsim` and `_ysim` which is equivalent to `_x` and
-        `_y` but with 10000 points for later plotting of the exact result.
-        """
-        n = (2**self._xSupPointsExp) + 1
-        r = 2**self._xRangeExp
-        if self._xSign == "pos":
-            x = np.linspace(0, r, n)
-        elif self._xSign == "neg":
-            x = np.linspace(r, 0, n)
-        elif self._xSign == "center":
-            x = np.linspace(-r, r, n)
-        xs = x[self._xStart : self._xEnd]
-        self._x = xs
-        ys = self._func(xs, *self._fargs, **self._fkwargs)
-        self._y = ys
-        # simulation points for plots
-        xsim = np.linspace(xs[0], xs[-1], 10000)[1:-1]
-        self._xsim = xsim
-        ysim = self._func(xsim, *self._fargs, **self._fkwargs)
-        self._ysim = ysim
-        # cubic
-        slopeStart = (ysim[1] - ysim[0]) / (xsim[1] - xsim[0])
-        slopeEnd = (ysim[-1] - ysim[-2]) / (xsim[-1] - xsim[-2])
-        bc = ((1, slopeStart), (1, slopeEnd))
-        # CubicSpline and PchipInterpolator require strictly increasing x.
-        # For 'neg' mode xs is decreasing, so sort before passing to scipy.
-        if xs[0] > xs[-1]:
-            xs_asc, ys_asc = xs[::-1], ys[::-1]
-            bc_asc = ((1, slopeEnd), (1, slopeStart))
-        else:
-            xs_asc, ys_asc = xs, ys
-            bc_asc = bc
-        self._pp = interp.CubicSpline(xs_asc, ys_asc, bc_type=bc_asc)  # type: ignore[arg-type]
-        self._pchip = PchipInterpolator(xs_asc, ys_asc)
-        # safe coef
-        if self._type == "cubic":
-            coef = copy.copy(self._pp.c.T)
-            self._coef = coef[::-1] if xs[0] > xs[-1] else coef
-        elif self._type == "linear":
-            self._coef = np.array(ys)
-
     def _scale_coef(self):
         """Scale the coefficients.
 
@@ -394,7 +394,6 @@ class CInterpolator(object):
         `_coefResExp`. Since the coefficients are stored in signed integers,
         the maximum is calculated from 2**(_coefResExp - 1).
         """
-        assert self._coef is not None
         res = self._coefResExp
         coef = self._coef
 
@@ -422,7 +421,6 @@ class CInterpolator(object):
 
     def _check_overflow(self):
         """Print some warnings if an overflow will/could occur."""
-        assert self._coef is not None
         coef = self._coef
         for col in range(len(coef[0, :]) - 1):
             exp = len(coef[0, :]) - 1 - col
