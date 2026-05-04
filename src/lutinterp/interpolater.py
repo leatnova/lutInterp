@@ -23,6 +23,10 @@ class CInterpolator(object):
     ----------
     func : callable
         The function that is interpolated.
+    fargs : tuple
+        Extra positional arguments forwarded to `func` when sampling x values.
+    fkwargs : dict or None
+        Extra keyword arguments forwarded to `func` when sampling x values.
     name : str
         A string used to name the printed function and the coefficient table.
         If left None, `func.__name__` is used instead.
@@ -50,7 +54,8 @@ class CInterpolator(object):
     def __init__(
         self,
         func: Callable[..., NDArray[np.float64]],
-        fargs: tuple | None = None,
+        fargs: tuple = (),
+        fkwargs: dict | None = None,
         name: str | None = None,
         typ: str = "linear",
         coefResExp: int = 16,
@@ -63,7 +68,8 @@ class CInterpolator(object):
     ) -> None:
         self._func = func
         self._funcName = func.__name__ if name is None else name
-        self._fargs = tuple() if fargs is None else fargs
+        self._fargs = fargs
+        self._fkwargs = {} if fkwargs is None else fkwargs
         if typ not in ["linear", "cubic"]:
             raise ValueError(f"typ must be 'linear' or 'cubic', got {typ!r}")
         self._type = typ
@@ -353,12 +359,12 @@ class CInterpolator(object):
             x = np.linspace(-r, r, n)
         xs = x[self._xStart : self._xEnd]
         self._x = xs
-        ys = self._func(xs, *self._fargs)
+        ys = self._func(xs, *self._fargs, **self._fkwargs)
         self._y = ys
         # simulation points for plots
         xsim = np.linspace(xs[0], xs[-1], 10000)[1:-1]
         self._xsim = xsim
-        ysim = self._func(xsim, *self._fargs)
+        ysim = self._func(xsim, *self._fargs, **self._fkwargs)
         self._ysim = ysim
         # cubic
         slopeStart = (ysim[1] - ysim[0]) / (xsim[1] - xsim[0])
