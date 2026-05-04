@@ -81,6 +81,33 @@ def _extract_coef(
         return np.array(ys)
 
 
+def _scale_coef(
+    coef: NDArray[np.float64],
+    res: int,
+) -> tuple[NDArray[np.float64], list[int]]:
+    """Return (scaled_coef, coef_shifts) scaled to maximally fill `res`-bit signed integers."""
+    coef = coef.copy()
+    shifts: list[int] = []
+    if len(np.shape(coef)) == 1:
+        f = 2 ** (res - 1) / max(np.abs(coef))
+        shift = int(np.log2(f) - 1) if np.log2(f) < 0 else int(np.log2(f))
+        coef = coef * 2**shift
+        if max(coef) == 2 ** (res - 1):
+            shift -= 1
+            coef = coef * 2 ** (-1)
+        shifts.append(shift)
+    else:
+        for col in range(len(coef[0, :])):
+            f = 2 ** (res - 1) / max(np.abs(coef[:, col]))
+            shift = int(np.log2(f) - 1) if np.log2(f) < 0 else int(np.log2(f))
+            coef[:, col] = coef[:, col] * 2**shift
+            if max(coef[:, col]) == 2 ** (res - 1):
+                shift -= 1
+                coef[:, col] = coef[:, col] * 2 ** (-1)
+            shifts.append(shift)
+    return coef, shifts
+
+
 class CInterpolator(object):
     """Class to produce interpolation tables and the according C-function
 
@@ -157,7 +184,6 @@ class CInterpolator(object):
         self._xStart = xStartIdx
         self._xEnd = xEndIdx
 
-        self._coefShift: list[int] = []
         self._x = _build_xs(
             self._xSign, self._xRangeExp, self._xSupPointsExp, self._xStart, self._xEnd
         )
@@ -167,7 +193,7 @@ class CInterpolator(object):
         self._pp, self._pchip = _fit_splines(self._x, self._y, self._xsim, self._ysim)
         self._coef = _extract_coef(self._type, self._pp, self._y, self._x)
         if scaleCoef:
-            self._scale_coef()
+            self._coef, self._coefShift = _scale_coef(self._coef, self._coefResExp)
         else:
             self._coefShift = [0, 0]
         if self._type == "cubic":
@@ -386,38 +412,6 @@ class CInterpolator(object):
         if shift > 0:
             s = f"({s}) >> {shift}"
         return s
-
-    def _scale_coef(self):
-        """Scale the coefficients.
-
-        The coefficients are scalled to maximize the user supplied
-        `_coefResExp`. Since the coefficients are stored in signed integers,
-        the maximum is calculated from 2**(_coefResExp - 1).
-        """
-        res = self._coefResExp
-        coef = self._coef
-
-        # linear funcion with 1-dim coefs.
-        if len(np.shape(coef)) == 1:
-            f = 2 ** (res - 1) / max(np.abs(coef))
-            shift = int(np.log2(f) - 1) if np.log2(f) < 0 else int(np.log2(f))
-            coef = coef * 2**shift
-            if max(coef) == 2 ** (res - 1):
-                shift -= 1
-                coef = coef * 2 ** (-1)
-            self._coefShift.append(shift)
-
-        # cubic funcion with 2-dim coefs.
-        else:
-            for col in range(len(coef[0, :])):
-                f = 2 ** (res - 1) / max(np.abs(coef[:, col]))
-                shift = int(np.log2(f) - 1) if np.log2(f) < 0 else int(np.log2(f))
-                coef[:, col] = coef[:, col] * 2**shift
-                if max(coef[:, col]) == 2 ** (res - 1):
-                    shift -= 1
-                    coef[:, col] = coef[:, col] * 2 ** (-1)
-                self._coefShift.append(shift)
-        self._coef = coef
 
     def _check_overflow(self):
         """Print some warnings if an overflow will/could occur."""
