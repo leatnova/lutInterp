@@ -81,6 +81,27 @@ def _extract_coef(
         return np.array(ys)
 
 
+def _check_overflow(
+    coef: NDArray[np.float64],
+    coef_shifts: list[int],
+    xSupPointsExp: int,
+) -> None:
+    """Print warnings if an overflow will or could occur in the cubic C formula."""
+    for col in range(len(coef[0, :]) - 1):
+        exp = len(coef[0, :]) - 1 - col
+        x = np.log2(
+            max(np.abs(coef[:, col])) * (2 ** (xSupPointsExp * exp - coef_shifts[col]))
+        )
+        if x > 31:
+            print(
+                f"The x**{exp} part results in an overflow. Use int64 intermediate result type"
+            )
+        elif x > 29:
+            print(
+                f"The x**{exp} part is rather high. Be carefull when building the sum. Eventuelly use int64 intermediate result type."
+            )
+
+
 def _scale_coef(
     coef: NDArray[np.float64],
     res: int,
@@ -197,7 +218,7 @@ class CInterpolator(object):
         else:
             self._coefShift = [0, 0]
         if self._type == "cubic":
-            self._check_overflow()
+            _check_overflow(self._coef, self._coefShift, self._xSupPointsExp)
         self._coefDataType = None
 
     def __repr__(self):
@@ -412,24 +433,3 @@ class CInterpolator(object):
         if shift > 0:
             s = f"({s}) >> {shift}"
         return s
-
-    def _check_overflow(self):
-        """Print some warnings if an overflow will/could occur."""
-        coef = self._coef
-        for col in range(len(coef[0, :]) - 1):
-            exp = len(coef[0, :]) - 1 - col
-            x = np.log2(
-                max(np.abs(coef[:, col]))
-                * (2 ** (self._xSupPointsExp * exp - self._coefShift[col]))
-            )
-            if x > 31:
-                print(
-                    f"The x**{exp} part results in an overflow. "
-                    f"Use int64 intermediate result type"
-                )
-            elif x > 29:
-                print(
-                    f"The x**{exp} part is rather high. "
-                    f"Be carefull when building the sum."
-                    f"Eventuelly use int64 intermediate result type"
-                )
