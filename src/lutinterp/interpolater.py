@@ -210,7 +210,7 @@ class CInterpolator(object):
         elif self._xSign == "neg":
             offset = 2**n - 1 - self._xStart
         elif self._xSign == "center":
-            offset = (2**n) / 2 - 1 - self._xStart
+            offset = 2 ** (n - 1) - 1 - self._xStart
         tmp = "val >> {:d}".format(self._xSupRangeExp)
         if offset < 0:
             p = "uint32_t p = ({}) - {:d};".format(tmp, int(np.abs(offset)))
@@ -362,11 +362,20 @@ class CInterpolator(object):
         slopeStart = (ysim[1] - ysim[0]) / (xsim[1] - xsim[0])
         slopeEnd = (ysim[-1] - ysim[-2]) / (xsim[-1] - xsim[-2])
         bc = ((1, slopeStart), (1, slopeEnd))
-        self._pp = interp.CubicSpline(xs, ys, bc_type=bc)  # type: ignore[arg-type]
-        self._pchip = PchipInterpolator(xs, ys)
+        # CubicSpline and PchipInterpolator require strictly increasing x.
+        # For 'neg' mode xs is decreasing, so sort before passing to scipy.
+        if xs[0] > xs[-1]:
+            xs_asc, ys_asc = xs[::-1], ys[::-1]
+            bc_asc = ((1, slopeEnd), (1, slopeStart))
+        else:
+            xs_asc, ys_asc = xs, ys
+            bc_asc = bc
+        self._pp = interp.CubicSpline(xs_asc, ys_asc, bc_type=bc_asc)  # type: ignore[arg-type]
+        self._pchip = PchipInterpolator(xs_asc, ys_asc)
         # safe coef
         if self._type == "cubic":
-            self._coef = copy.copy(self._pp.c.T)
+            coef = copy.copy(self._pp.c.T)
+            self._coef = coef[::-1] if xs[0] > xs[-1] else coef
         elif self._type == "linear":
             self._coef = np.array(ys)
 
