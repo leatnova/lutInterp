@@ -65,13 +65,15 @@ class CInterpolator(object):
         self._funcName = func.__name__ if name is None else name
         self._fargs = tuple() if fargs is None else fargs
         if typ not in ["linear", "cubic"]:
-            typ = "linear"
+            raise ValueError(f"typ must be 'linear' or 'cubic', got {typ!r}")
         self._type = typ
         self._coefResExp = np.clip(coefResExp, 1, 32)
         self._xSupPointsExp = xSupportPointsExp
         self._xRangeExp = xRangeExp
         if xRangeSign not in ["pos", "neg", "center"]:
-            xRangeSign = "pos"
+            raise ValueError(
+                f"xRangeSign must be 'pos', 'neg', or 'center', got {xRangeSign!r}"
+            )
         self._xSign = xRangeSign
         if xRangeSign in ["pos", "neg"]:
             self._xSupRangeExp = int(xRangeExp - xSupportPointsExp)
