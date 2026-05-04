@@ -1,0 +1,34 @@
+[build-system]
+requires = ["uv_build>=0.11.8,<0.12.0"]
+build-backend = "uv_build"
+
+[project]
+name = "lutinterp"
+version = "0.1.0"
+description = "Generate C lookup-table interpolation code from Python callables"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.12"
+authors = [
+    { name = "Lothar Eichelberger", email = "jeanjacques.eichelberger@gmail.com" }
+]
+keywords = ["embedded", "interpolation", "lookup-table", "C code generation", "integer arithmetic"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Embedded Systems",
+    "Topic :: Software Development :: Code Generators",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    "numpy>=2.0",
+    "scipy>=1.13",
+    "matplotlib>=3.9",
+]
+
+# [project.urls]
+# Repository = "https://github.com/jeanjacqueseichelberger/lutInterp"
+
