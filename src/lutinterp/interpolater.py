@@ -176,8 +176,12 @@ class CInterpolator(object):
         devided into slices by the number of supporting points (2**nExp).
     xRangeSign : str
         Sign of the input range, 'pos', 'neg' or 'center'
-    xStartIdx, xEndIdx : int or None
-        List indexes to crop the input range, producing a smaller output table.
+    xCrop : tuple[int | None, int | None] | None
+        ``(start, end)`` slice indexes for the support-point array, producing a
+        smaller output table.  ``None`` (the default) means no crop.  Either
+        element of the tuple may be ``None`` to use the Python-slice default for
+        that end (start → 0, end → last element).  The start index must be
+        non-negative; a negative value raises ``ValueError``.
     scaleCoef: Bool
         Usually the coeficients are scalled to get the best resolution.
         It can be disabled for test purpose or to get the plain table for
@@ -195,8 +199,7 @@ class CInterpolator(object):
         xSupportPointsExp: int = 3,
         xRangeExp: int = 12,
         xRangeSign: str = "pos",
-        xStartIdx: int = 0,
-        xEndIdx: int | None = None,
+        xCrop: tuple[int | None, int | None] | None = None,
         scaleCoef: bool = True,
     ) -> None:
         self._func = func
@@ -218,8 +221,13 @@ class CInterpolator(object):
             self._xSupRangeExp = int(xRangeExp - xSupportPointsExp)
         else:
             self._xSupRangeExp = int(xRangeExp + 1 - xSupportPointsExp)
-        self._xStart = xStartIdx
-        self._xEnd = xEndIdx
+        _cropStart, _cropEnd = xCrop if xCrop is not None else (None, None)
+        self._xStart = 0 if _cropStart is None else _cropStart
+        self._xEnd = _cropEnd
+        if self._xStart < 0:
+            raise ValueError(
+                f"xCrop start index must be non-negative, got {self._xStart}"
+            )
 
         self._x = _build_xs(
             self._xSign, self._xRangeExp, self._xSupPointsExp, self._xStart, self._xEnd
