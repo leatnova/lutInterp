@@ -172,10 +172,13 @@ class CInterpolator(object):
     xSupportPointsExp : int
         2**x exponent that defines the number of supporting points.
     xRangeExp : int
-        2**x exponent that defines the input range. The input range is
-        devided into slices by the number of supporting points (2**nExp).
+        `2**x` exponent that defines the input range. The input range is
+        devided into slices by the number of supporting points.
+        Depending on the sign of the input range (`xRangeSign`), the supporting
+        points are generated from 0 to `2**x` ('pos'), from `2**x` to 0 ('neg')
+        or from `-2**x` to `2**x` ('center').
     xRangeSign : str
-        Sign of the input range, 'pos', 'neg' or 'center'
+        Sign of the input range, 'pos', 'neg' or 'center'.
     xCrop : tuple[int | None, int | None] | None
         ``(start, end)`` slice indexes for the support-point array, producing a
         smaller output table.  ``None`` (the default) means no crop.  Either

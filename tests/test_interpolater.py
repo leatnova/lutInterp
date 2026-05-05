@@ -34,6 +34,10 @@ def test_cubic_coef_is_2d_with_4_columns():
 def test_support_point_count():
     ci = CInterpolator(linear_fn, xSupportPointsExp=3, xRangeExp=10)
     assert len(ci._x) == 2**3 + 1
+    ci = CInterpolator(linear_fn, xSupportPointsExp=3, xCrop=(1, None))
+    assert len(ci._x) == 2**3 + 1 - 1
+    ci = CInterpolator(linear_fn, xSupportPointsExp=3, xCrop=(None, -2))
+    assert len(ci._x) == 2**3 + 1 - 2
 
 
 @pytest.mark.parametrize(
@@ -109,7 +113,7 @@ def _eval_linear_formula(ci: CInterpolator, val: int) -> int:
         shift1 = xSupRangeExp
         const = coef[p]
     else:
-        shift1 = xSupRangeExp + shift   # may be negative
+        shift1 = xSupRangeExp + shift  # may be negative
         const = coef[p] << int(abs(shift))
 
     diff = coef[p + 1] - coef[p]
@@ -138,7 +142,7 @@ def test_linear_roundtrip_accuracy():
         typ="linear",
         coefResExp=16,
         xRangeExp=10,
-        xSupportPointsExp=4,   # 16 segments → fine enough for a quadratic
+        xSupportPointsExp=4,  # 16 segments → fine enough for a quadratic
         xRangeSign="pos",
     )
 
