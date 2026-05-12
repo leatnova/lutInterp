@@ -146,7 +146,7 @@ def _scale_coef(
 
 
 class CInterpolator(object):
-    """Class to produce interpolation tables and the according C-function
+    """Generator for C interpolation tables and the according C-function.
 
     The function that is produced can be either linear or a cubic spline.
     Note that the cubic spline needs four times more memory for the same

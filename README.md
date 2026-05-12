@@ -1,6 +1,10 @@
 # lutInterp
 
-Generate C lookup-table interpolation code from Python callables — using integer-only arithmetic suitable for embedded targets (no floating point at runtime).
+Generate C lookup-table interpolation code from Python callables — using integer-only arithmetic (no floating point at runtime) suitable for embedded targets (32-bit MCUs).
+
+Complex math functions sometimes consume too much runtime on MCUs, need extra libraries
+and extra engineering. It's much simpler to do the math in python and produce a lookup
+table which can be interpolated, all with fix point arithmetic.
 
 ## Installation
 
