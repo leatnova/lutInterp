@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "lutinterp"
-version = "0.1.0"
+version = "0.1.1"
 description = "Generate C lookup-table interpolation code from Python callables"
 readme = "README.md"
 license = { text = "MIT" }
